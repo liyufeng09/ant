@@ -1,0 +1,261 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <math.h>
+
+#include "ant.h"
+
+//=========================================================
+//autor Li YuFeng
+//将蚁群算法应用于测试用例约简
+//=========================================================
+const int tsr[CITY_COUNT][REQ_COUNT]=
+{
+    {0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+    {0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0},
+    {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1},
+    {0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+    {0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+    {0,0,0,0,0,1,0,0,0,0,0,0,0,1,0,0,0,0},
+    {0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,1,0},
+    {0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0},
+    {0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+    {0,1,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0},
+    {0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+    {0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0},
+    {0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,1,0,0},
+    {0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0},
+    {0,0,0,0,0,0,0,0,0,1,0,0,1,0,0,0,0,0},
+    {0,0,0,1,0,1,0,0,0,0,0,0,0,0,0,0,0,0},
+    {0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0},
+    {0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0},
+    {0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+    {1,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0},
+    {0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0},
+    {0,1,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0},
+    {0,0,0,0,1,0,0,0,0,0,0,0,0,0,1,0,0,0},
+    {0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,1},
+    {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0},
+    {0,1,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0}
+};
+int TC[CITY_COUNT]= {8, 37, 75, 25, 24, 16, 17, 16, 27, 26, 29, 14, 16,
+                     11, 25, 21, 23, 23, 12, 15, 28, 15, 22, 24, 13, 17
+                    };
+double  P0=0.8;
+double  pheromone[CITY_COUNT];//记录每个case信息素量的变化,公有
+int*    allowed;//禁忌表
+int*    req; //测试需求覆盖表，因为蚂蚁串行所以以上两个变量公有
+//===============================================================
+//驱动函数，包含蚂蚁的整个搜索过程和信息素，量子信息的更新
+//===============================================================
+main()
+{
+    for(int i=0; i<CITY_COUNT; i++)//初始每个case的pheromone为1.2，之后限制在(tauMin,tauMax)区间
+    {
+        pheromone[i]=1.2;
+    }
+    int cir=0;
+    double *it_results=(double *)malloc(ANT_COUNT*sizeof(double));//记录本次迭代所有蚂蚁的结果
+
+    double    bestResult=10000.0f;//保存全局最优路径长度
+    while(cir<1000)//开始迭代过程
+    {
+        memset(it_results,0,ANT_COUNT*sizeof(double));
+        int k=0;
+        while(k<ANT_COUNT)
+        {
+            it_results[k]=ant_search();
+            k++;
+        }
+        double cBest=it_results[0];//获取本次迭代最小，结果计入cBest
+        for(int i=0; i<ANT_COUNT; i++)
+        {
+            if(cBest>=it_results[i])
+            {
+                cBest=it_results[i];
+            }
+        }
+        printf("%dth iteration best is %.2f\n",cir,cBest);
+        if(bestResult>=cBest)
+        {
+            bestResult=cBest;
+        }
+        printf("%dth iteration golbal best is %.2f\n",cir,bestResult);
+        cir++;
+    }
+    printf("The best result is %.2f",bestResult);
+
+}
+//===============================================================
+//蚂蚁的一次搜索过程
+//===============================================================
+double ant_search()
+{
+    allowed=(int *)malloc(CITY_COUNT*sizeof(int));
+    memset(allowed,0,CITY_COUNT*sizeof(int));//初始path全为0，表示every case is allowed,走过的置1
+    req=(int *)malloc(REQ_COUNT*sizeof(int));
+    memset(req,0,REQ_COUNT*sizeof(int));//初始测试需求为1，被满足的置0
+
+    int reqCount=0;//被满足的request个数
+
+    int start=irand(0,25);//随机分布蚂蚁,将初始结点加入禁忌表
+    allowed[start]=1;
+    reqCount=updateReq(start,reqCount);
+
+    int next;
+    while(reqCount<REQ_COUNT)//遍历城市选择结点
+    {
+        next=getNext();
+        allowed[next]=1;
+        reqCount=updateReq(next,reqCount);
+    }
+
+    double result=0.0; //计算路径长度
+    for(int i=0; i<CITY_COUNT; i++)
+    {
+        if(allowed[i]==1)
+        {
+            result=result+TC[i];
+        }
+    }
+    updatePh(result);
+    free(req);
+    return result;
+}
+//===============================================================
+//获取下一个测试用例
+//===============================================================
+int getNext()
+{
+    double* prob=(double*)malloc(CITY_COUNT*sizeof(double));
+    memset(prob,0,CITY_COUNT*sizeof(double));
+    getProb(prob);
+
+    double pr=drand(0.0,1.0);
+    if(pr>P0)//执行轮盘算法
+    {
+        int i=0;
+        while(pr>0&&i<CITY_COUNT)
+        {
+            pr=pr-prob[i];
+            i++;
+        }
+        allowed[i--]=0;     //该测试用例被选中不再参与后面的选择
+        return i;
+    }
+    else    //抽选概率最大的
+    {
+        double maxc=prob[0];
+        int point=0;
+        for(int i=0; i<CITY_COUNT; i++)
+        {
+            if(maxc<prob[i])
+            {
+                maxc=prob[i];
+                point=i;
+            }
+        }
+        allowed[point]=1;  //该测试用例被选中不再参与后面的选择
+        return point;
+    }
+    free(prob);
+}
+//=================================================================
+//获取每个test case 被选择的可能性
+//=================================================================
+int getProb(double prob[])
+{
+    double *eta=(double*)malloc(CITY_COUNT*sizeof(double));
+    getEta(eta);
+
+    for(int i=0; i<CITY_COUNT; i++)
+    {
+        prob[i]=0.0;//每次使用之前重置
+    }
+
+    double sum=0.0;
+    for(int i=0; i<CITY_COUNT; i++)//求概率表达式的分母
+    {
+        sum=sum+pow(pheromone[i],ALPHA)*pow(eta[i],BETA);
+    }
+    if(sum==0)
+    {
+        printf("Error!!!!!");
+        exit(-1);
+    }
+
+    double temp=0.0;
+    for(int i=0; i<CITY_COUNT; i++)
+    {
+        temp=pow(pheromone[i],ALPHA)*pow(eta[i],BETA);
+        prob[i]=temp/sum;
+    }
+    double st=0.0;
+    for(int i=0; i<CITY_COUNT; i++)//输出单个结点概率
+    {
+        st+=prob[i];
+    }
+    free(eta);//释放eta空间
+}
+//======================================================================
+//无区别的求启发信息，因为在getCover()时the passed cases were kept 0
+//======================================================================
+void getEta(double eta[])
+{
+    int *cover=(int *)malloc(CITY_COUNT*sizeof(int));
+    memset(cover,0,CITY_COUNT*sizeof(int));//在获取之前每个测试用例的覆盖为0
+    memset(eta,0,CITY_COUNT*sizeof(double));//初始化eta空间
+    for(int i=0; i<CITY_COUNT; i++) //获取每个测试用例覆盖
+        for(int j=0; j<REQ_COUNT; j++)
+            if(tsr[i][j]!=0&&req[j]==0)
+                cover[i]++;     //无论测试用例是否在已选择的路径内统一获取覆盖度
+
+    for(int i=0; i<CITY_COUNT; i++)
+        eta[i]=(double)cover[i]/TC[i];
+    free(cover);
+}
+//======================================================================
+//更新测试需求
+//======================================================================
+int updateReq(int selected,int reqCount)
+{
+
+    for(int j=0; j<REQ_COUNT; j++)
+        if(tsr[selected][j]>0&&req[j]==0)
+        {
+            req[j]=1;
+            reqCount++;
+        }
+    return reqCount;
+}
+//======================================================================
+//方式1：按照ACO蚁周模型，蚂蚁走过即留下信息素，
+//方式2：所有蚂蚁走过，统一更新
+//方式3：MMAS只有当前迭代的最优更新
+//方式4：ACS只使用当前全局最优更新
+//方式5：AQACS使用ACO更新同时，交替使用当前迭代最优和全局最优对最优秀的蚂蚁释放更多的信息素
+//======================================================================
+int updatePh(double total)
+{
+    const double Q=2.0;
+    double deltaTau=Q/total;
+    for(int i=0; i<CITY_COUNT; i++)
+        if(allowed[i]==1)  //该测试用例被选中
+            pheromone[i]=(1-OMEGA)*pheromone[i]+deltaTau;
+}
+//======================================================================
+//产生指定范围内随机整数
+//======================================================================
+int irand(int nLow,int nUpper)
+{
+    double dbTemp=(double)rand()/((double)RAND_MAX+1.0);
+    return nLow+dbTemp*(nUpper-nLow);
+}
+//======================================================================
+//产生指定范围内随机浮点数
+//======================================================================
+double drand(double nLow,double nUpper)
+{
+    double dbTemp=(double)rand()/((double)RAND_MAX+1.0);
+    return nLow+dbTemp*(nUpper-nLow);
+}
